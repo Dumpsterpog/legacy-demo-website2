@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Maze Solver Robot Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+<style>body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    margin: 0;
+    padding: 0;
+    background-color: #282c34;
+    color: #e0e0e0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+}
+
+.container {
+    background-color: #3c4048;
+    border-radius: 10px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+    padding: 30px;
+    max-width: 1200px;
+    width: 95%;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+h1 {
+    color: #61dafb;
+    text-align: center;
+    margin-bottom: 25px;
+}
+
+.main-content {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 30px;
+    justify-content: center;
+}
+
+.dashboard-panel, .maze-panel {
+    background-color: #4a4f59;
+    border-radius: 8px;
+    padding: 20px;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.dashboard-panel {
+    flex: 1;
+    min-width: 300px;
+    max-width: 400px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.maze-panel {
+    flex: 2;
+    min-width: 400px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+h2 {
+    color: #98c379;
+    margin-top: 0;
+    margin-bottom: 15px;
+    border-bottom: 1px solid #5a5f6b;
+    padding-bottom: 5px;
+}
+
+p {
+    margin: 5px 0;
+}
+
+.controls button {
+    background-color: #61dafb;
+    color: #282c34;
+    border: none;
+    padding: 10px 18px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 1em;
+    margin-right: 10px;
+    margin-bottom: 10px;
+    transition: background-color 0.2s ease;
+}
+
+.controls button:hover:not(:disabled) {
+    background-color: #a4e5fc;
+}
+
+.controls button:disabled {
+    background-color: #5a5f6b;
+    color: #a0a0a0;
+    cursor: not-allowed;
+}
+
+.log-output {
+    background-color: #21252b;
+    border: 1px solid #5a5f6b;
+    border-radius: 5px;
+    padding: 10px;
+    height: 200px;
+    overflow-y: auto;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 0.9em;
+    color: #abb2bf;
+    line-height: 1.4;
+}
+
+.log-output p {
+    margin: 0;
+    padding: 2px 0;
+}
+
+canvas {
+    border: 2px solid #61dafb;
+    background-color: #21252b;
+    display: block;
+    margin-top: 15px;
+    border-radius: 8px;
+}
+</style></head>
+<body>
+    <div class="container">
+        <h1>Maze Solver Robot Dashboard</h1>
+        
+        <div class="main-content">
+            <div class="dashboard-panel">
+                <h2>Robot Status</h2>
+                <p>Status: <span id="robot-status">Idle</span></p>
+                <p>Position: (<span id="robot-pos-x">-</span>, <span id="robot-pos-y">-</span>)</p>
+                <p>Direction: <span id="robot-direction">-</span></p>
+
+                <h2>Controls</h2>
+                <div class="controls">
+                    <button id="load-maze-1">Load Maze 1</button>
+                    <button id="load-maze-2">Load Maze 2</button>
+                    <button id="start-solving" disabled>Start Solving</button>
+                    <button id="stop-solving" disabled>Stop</button>
+                    <button id="reset-robot" disabled>Reset Robot</button>
+                </div>
+
+                <h2>Log</h2>
+                <div id="log-output" class="log-output"></div>
+            </div>
+
+            <div class="maze-panel">
+                <h2>Maze Visualization</h2>
+                <canvas id="mazeCanvas"></canvas>
+            </div>
+        </div>
+    </div>
+    <script src="script.js"></script>
+<script>const CELL_SIZE = 30;
+let canvas, ctx;
+let currentMaze = [];
+let robot = {
+    x: 0,
+    y: 0,
+    direction: 0 // 0: E (Right), 1: S (Down), 2: W (Left), 3: N (Up)
+};
+let robotPath = [];
+let solvingInterval = null;
+let mazeWidth = 0;
+let mazeHeight = 0;
+let startPos = { x: 0, y: 0 };
+let endPos = { x: 0, y: 0 };
+
+// DOM elements
+const robotStatusElem = document.getElementById('robot-status');
+const robotPosXElem = document.getElementById('robot-pos-x');
+const robotPosYElem = document.getElementById('robot-pos-y');
+const robotDirectionElem = document.getElementById('robot-direction');
+const logOutputElem = document.getElementById('log-output');
+const loadMaze1Btn = document.getElementById('load-maze-1');
+const loadMaze2Btn = document.getElementById('load-maze-2');
+const startSolvingBtn = document.getElementById('start-solving');
+const stopSolvingBtn = document.getElementById('stop-solving');
+const resetRobotBtn = document.getElementById('reset-robot');
+
+const MAZES = {
+    // 0 = path, 1 = wall, 'S' = start, 'E' = end
+    maze1: {
+        grid: [
+            [1, 1, 1, 1, 1, 1, 1, 1, 1],
+            [1, 'S', 0, 0, 0, 0, 0, 0, 1],
+            [1, 1, 1, 0, 1, 1, 1, 0, 1],
+            [1, 0, 0, 0, 1, 0, 0, 0, 1],
+            [1, 0, 1, 1, 1, 0, 1, 1, 1],
+            [1, 0, 0, 0, 0, 0, 0, 'E', 1],
+            [1, 1, 1, 1, 1, 1, 1, 1, 1]
+        ],
+        start: { x: 1, y: 1 },
+        end: { x: 7, y: 5 }
+    },
+    maze2: {
+        grid: [
+            [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+            [1, 'S', 0, 1, 0, 0, 0, 1, 0, 0, 1],
+            [1, 0, 0, 1, 0, 1, 0, 1, 1, 0, 1],
+            [1, 0, 1, 1, 0, 1, 0, 0, 0, 0, 1],
+            [1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 1],
+            [1, 1, 1, 1, 0, 0, 0, 0, 1, 0, 1],
+            [1, 0, 0, 0, 0, 1, 1, 0, 1, 0, 1],
+            [1, 0, 1, 1, 1, 1, 0, 0, 1, 0, 1],
+            [1, 0, 0, 0, 0, 0, 0, 1, 0, 'E', 1],
+            [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+        ],
+        start: { x: 1, y: 1 },
+        end: { x: 9, y: 8 }
+    }
+};
+
+// Direction vectors (0: E, 1: S, 2: W, 3: N)
+const dx = [1, 0, -1, 0];
+const dy = [0, 1, 0, -1];
+const directionNames = ['East', 'South', 'West', 'North'];
+
+document.addEventListener('DOMContentLoaded', () => {
+    canvas = document.getElementById('mazeCanvas');
+    ctx = canvas.getContext('2d');
+
+    // Initial state
+    updateStatus('Idle');
+    logMessage('Welcome! Load a maze to begin.');
+
+    // Event Listeners
+    loadMaze1Btn.addEventListener('click', () => loadMaze(MAZES.maze1, 'Maze 1'));
+    loadMaze2Btn.addEventListener('click', () => loadMaze(MAZES.maze2, 'Maze 2'));
+    startSolvingBtn.addEventListener('click', startSolving);
+    stopSolvingBtn.addEventListener('click', stopSolving);
+    resetRobotBtn.addEventListener('click', resetRobot);
+
+    // Initial drawing (empty canvas or default maze)
+    // For now, it will be empty until a maze is loaded
+});
+
+function updateStatus(status, log = true) {
+    robotStatusElem.textContent = status;
+    if (log) logMessage(`Status updated: ${status}`);
+    if (status === 'Solving...') {
+        startSolvingBtn.disabled = true;
+        stopSolvingBtn.disabled = false;
+        loadMaze1Btn.disabled = true;
+        loadMaze2Btn.disabled = true;
+    } else if (status === 'Idle' || status === 'Solved' || status === 'Stopped' || status === 'Stuck') {
+        startSolvingBtn.disabled = currentMaze.length === 0 || status === 'Solved';
+        stopSolvingBtn.disabled = true;
+        loadMaze1Btn.disabled = false;
+        loadMaze2Btn.disabled = false;
+    }
+    resetRobotBtn.disabled = currentMaze.length === 0 || status === 'Solving...';
+}
+
+function updateRobotInfo() {
+    robotPosXElem.textContent = robot.x;
+    robotPosYElem.textContent = robot.y;
+    robotDirectionElem.textContent = directionNames[robot.direction];
+}
+
+function logMessage(message) {
+    const p = document.createElement('p');
+    p.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+    logOutputElem.appendChild(p);
+    logOutputElem.scrollTop = logOutputElem.scrollHeight; // Auto-scroll to bottom
+}
+
+function loadMaze(mazeConfig, name) {
+    stopSolving(); // Stop any ongoing solving process
+    currentMaze = mazeConfig.grid.map(row => [...row]); // Deep copy
+    startPos = { ...mazeConfig.start };
+    endPos = { ...mazeConfig.end };
+
+    mazeHeight = currentMaze.length;
+    mazeWidth = currentMaze[0].length;
+
+    canvas.width = mazeWidth * CELL_SIZE;
+    canvas.height = mazeHeight * CELL_SIZE;
+
+    logMessage(`${name} loaded.`);
+    resetRobot(false); // Reset robot without logging status again
+    updateStatus('Idle', false); // Update status without logging it again
+    drawMaze();
+}
+
+function resetRobot(logStatus = true) {
+    clearInterval(solvingInterval);
+    solvingInterval = null;
+
+    robot.x = startPos.x;
+    robot.y = startPos.y;
+    robot.direction = 0; // Start facing East
+    robotPath = [{ x: robot.x, y: robot.y }];
+
+    updateRobotInfo();
+    if (logStatus) {
+        updateStatus('Idle');
+        logMessage('Robot reset to start position.');
+    }
+    drawMaze();
+}
+
+function startSolving() {
+    if (solvingInterval) return; // Already solving
+    if (currentMaze.length === 0) {
+        logMessage('Error: No maze loaded.');
+        return;
+    }
+    updateStatus('Solving...');
+    logMessage('Robot started solving...');
+    
+    // Make sure path starts fresh if it was already solved/stopped
+    if (robot.x !== startPos.x || robot.y !== startPos.y || robotPath.length > 1) {
+        resetRobot(false);
+    }
+
+    solvingInterval = setInterval(moveRobot, 200);
+}
+
+function stopSolving() {
+    if (!solvingInterval) return; // Not solving
+    clearInterval(solvingInterval);
+    solvingInterval = null;
+    updateStatus('Stopped');
+    logMessage('Robot stopped.');
+}
+
+function moveRobot() {
+    if (robot.x === endPos.x && robot.y === endPos.y) {
+        stopSolving();
+        updateStatus('Solved');
+        logMessage('Robot reached the exit! Maze Solved!');
+        return;
+    }
+
+    // Simple Right-Hand Rule (prioritize Right, then Forward, then Left, then Back)
+    // Test directions in order:
+    // (current_dir + 1) % 4 (Right relative to current_dir)
+    // current_dir (Forward)
+    // (current_dir + 3) % 4 (Left relative to current_dir)
+    // (current_dir + 2) % 4 (Back relative to current_dir)
+    const tryDirections = [
+        (robot.direction + 1) % 4, 
+        robot.direction,
+        (robot.direction + 3) % 4, 
+        (robot.direction + 2) % 4  
+    ];
+
+    let moved = false;
+    for (const dir of tryDirections) {
+        const newX = robot.x + dx[dir];
+        const newY = robot.y + dy[dir];
+
+        if (isPath(newX, newY)) {
+            robot.x = newX;
+            robot.y = newY;
+            robot.direction = dir;
+            robotPath.push({ x: newX, y: newY });
+            moved = true;
+            break;
+        }
+    }
+
+    if (!moved) {
+        logMessage('Robot is stuck or no valid path found!');
+        stopSolving();
+        updateStatus('Stuck');
+    }
+
+    updateRobotInfo();
+    drawMaze();
+}
+
+function isPath(x, y) {
+    return y >= 0 && y < mazeHeight &&
+           x >= 0 && x < mazeWidth &&
+           currentMaze[y][x] !== 1; // Not a wall
+}
+
+function drawMaze() {
+    if (!ctx || currentMaze.length === 0) return;
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    for (let y = 0; y < mazeHeight; y++) {
+        for (let x = 0; x < mazeWidth; x++) {
+            const cell = currentMaze[y][x];
+            ctx.beginPath();
+            ctx.rect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+
+            if (cell === 1) {
+                ctx.fillStyle = '#6e7681'; // Wall color
+            } else if (x === startPos.x && y === startPos.y) {
+                ctx.fillStyle = '#98c379'; // Start color
+            } else if (x === endPos.x && y === endPos.y) {
+                ctx.fillStyle = '#e06c75'; // End color
+            } else {
+                ctx.fillStyle = '#282c34'; // Path color
+            }
+            ctx.fill();
+            ctx.strokeStyle = '#3c4048'; // Cell border
+            ctx.lineWidth = 0.5;
+            ctx.stroke();
+        }
+    }
+
+    // Draw robot path
+    ctx.strokeStyle = '#61dafb'; // Path color
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    if (robotPath.length > 0) {
+        ctx.moveTo(robotPath[0].x * CELL_SIZE + CELL_SIZE / 2, robotPath[0].y * CELL_SIZE + CELL_SIZE / 2);
+        for (let i = 1; i < robotPath.length; i++) {
+            ctx.lineTo(robotPath[i].x * CELL_SIZE + CELL_SIZE / 2, robotPath[i].y * CELL_SIZE + CELL_SIZE / 2);
+        }
+    }
+    ctx.stroke();
+
+    // Draw robot (as a triangle to indicate direction)
+    ctx.fillStyle = '#e5c07b'; // Robot color
+    ctx.beginPath();
+    const centerX = robot.x * CELL_SIZE + CELL_SIZE / 2;
+    const centerY = robot.y * CELL_SIZE + CELL_SIZE / 2;
+
+    const triSize = CELL_SIZE * 0.4;
+    ctx.save();
+    ctx.translate(centerX, centerY);
+    ctx.rotate(robot.direction * Math.PI / 2); // Rotate based on direction (0=East, 1=South, etc.)
+    ctx.moveTo(triSize, 0); // Pointy end (facing East)
+    ctx.lineTo(-triSize * 0.7, -triSize * 0.7);
+    ctx.lineTo(-triSize * 0.7, triSize * 0.7);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+}
+</script></body>
+</html>
